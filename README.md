@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://github.com/DirectedHunt42/Pulsar/blob/main/Icons/Pulsar_Logo_Light.png">
-    <source media="(prefers-color-scheme: light)" srcset="https://github.com/DirectedHunt42/Pulsar/blob/main/Icons/Pulsar_Logo_Dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="https://github.com/DirectedHunt42/Pulsar/blob/main/Icons/Pulsar_Logo.png">
     <img src="https://github.com/DirectedHunt42/Pulsar/blob/main/Icons/Pulsar_Logo_Light.png" alt="Pulsar Logo" width="350"/>
   </picture>
 </p>
