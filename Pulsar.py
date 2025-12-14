@@ -10,9 +10,35 @@ import numpy as np
 import os
 from datetime import datetime
 import calendar
+from PIL import Image
+import webbrowser
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+# Configuration - customize these paths and settings
+DATA_FOLDER = '💲NovaFoundry'
+CSV_FILE = 'transactions.csv'
+ICON_PATH = "Icons/Pulsar_Icon.ico"  # Set your custom icon path here (e.g., .ico file)
+FONT_REGULAR_PATH = "Fonts/BeVietnamPro-Regular.ttf"
+FONT_BOLD_PATH = "Fonts/BeVietnamPro-Bold.ttf"
+FONT_ITALIC_PATH = "Fonts/BeVietnamPro-Italic.ttf"
+FONT_LIGHT_PATH = "Fonts/BeVietnamPro-Light.ttf"
+FONT_THIN_PATH = "Fonts/BeVietnamPro-Thin.ttf"
+FONT_REGULAR_FAMILY = "Be Vietnam Pro"
+FONT_BOLD_FAMILY = "Be Vietnam Pro Bold"
+FONT_ITALIC_FAMILY = "Be Vietnam Pro Italic"
+FONT_LIGHT_FAMILY = "Be Vietnam Pro Light"
+FONT_THIN_FAMILY = "Be Vietnam Pro Thin"
+IMAGE2_PATH = "Icons/Nova_foundry_wide_transparent.png"
+IMAGE1_PATH = "Icons/Pulsar_Logo_Light.png"
+ABOUT_TEXT1 = "Pulsar v{Version}"
+LINK1_URL = "https://novafoundry.ca"
+LINK1_TEXT = "Official Website"
+LINK2_URL = "https://buymeacoffee.com/novafoundry"
+LINK2_TEXT = "Support Nova Foundry"
+ABOUT_TEXT2 = "Developed by Nova Foundry. © {Year} All rights reserved."
+VERSION = "1.0.0"
 
 # Get the app data path
 app_data = os.environ.get('LOCALAPPDATA')
@@ -20,9 +46,9 @@ if app_data is None:
     messagebox.showerror("Error", "LOCALAPPDATA environment variable not found.")
     exit(1)
 
-folder = os.path.join(app_data, '💲NovaFoundry')
+folder = os.path.join(app_data, DATA_FOLDER)
 os.makedirs(folder, exist_ok=True)
-csv_path = os.path.join(folder, 'transactions.csv')
+csv_path = os.path.join(folder, CSV_FILE)
 
 # Load or initialize DataFrame
 if os.path.exists(csv_path):
@@ -35,12 +61,46 @@ if os.path.exists(csv_path):
 else:
     df = pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Balance'])
 
+# On closing
+def on_closing():
+    try:
+        for seq in root.tk.eval('after info').split():
+            root.after_cancel(seq)
+    except:
+        pass
+    root.destroy()
+
+# Main window
+root = ctk.CTk()
+root.title("Financial Tracker")
+if ICON_PATH and os.path.exists(ICON_PATH):
+    root.iconbitmap(ICON_PATH)
+root.after(200, lambda: root.state('zoomed'))
+root.configure(fg_color='#1a1a1a')
+root.protocol("WM_DELETE_WINDOW", on_closing)
+
+# Load custom fonts
+ctk.FontManager.load_font(FONT_REGULAR_PATH)
+ctk.FontManager.load_font(FONT_BOLD_PATH)
+ctk.FontManager.load_font(FONT_ITALIC_PATH)
+ctk.FontManager.load_font(FONT_LIGHT_PATH)
+ctk.FontManager.load_font(FONT_THIN_PATH)
+
+# Define fonts
+font_regular = ctk.CTkFont(family=FONT_REGULAR_FAMILY, size=14)
+font_bold = ctk.CTkFont(family=FONT_BOLD_FAMILY, size=14)
+font_italic = ctk.CTkFont(family=FONT_ITALIC_FAMILY, size=14)
+font_light = ctk.CTkFont(family=FONT_LIGHT_FAMILY, size=14)
+font_thin = ctk.CTkFont(family=FONT_THIN_FAMILY, size=14)
+
 # Function to select date
 def select_date(entry):
     cal_dialog = ctk.CTkToplevel(root)
+    if ICON_PATH and os.path.exists(ICON_PATH):
+        cal_dialog.after(250, lambda: cal_dialog.iconbitmap(ICON_PATH))
     cal_dialog.title("Select Date")
-    cal_dialog.geometry("300x300")
-    cal_dialog.attributes('-topmost', True)
+    cal_dialog.geometry("350x350")
+    cal_dialog.after(250, lambda: cal_dialog.attributes('-topmost', True))
 
     current_year = datetime.now().year
     current_month = datetime.now().month
@@ -48,11 +108,11 @@ def select_date(entry):
     year_var = ctk.StringVar(value=str(current_year))
     month_var = ctk.StringVar(value=str(current_month))
 
-    ctk.CTkLabel(cal_dialog, text="Year:").pack(pady=5)
+    ctk.CTkLabel(cal_dialog, text="Year:", font=font_regular).pack(pady=5)
     year_combo = ctk.CTkComboBox(cal_dialog, values=[str(y) for y in range(current_year - 10, current_year + 10)], variable=year_var)
     year_combo.pack(pady=5)
 
-    ctk.CTkLabel(cal_dialog, text="Month:").pack(pady=5)
+    ctk.CTkLabel(cal_dialog, text="Month:", font=font_regular).pack(pady=5)
     month_combo = ctk.CTkComboBox(cal_dialog, values=[str(m) for m in range(1, 13)], variable=month_var)
     month_combo.pack(pady=5)
 
@@ -98,22 +158,24 @@ def select_date(entry):
 # Function to add transaction
 def add_transaction(is_income=True):
     dialog = ctk.CTkToplevel(root)
+    if ICON_PATH and os.path.exists(ICON_PATH):
+        dialog.after(250, lambda: dialog.iconbitmap(ICON_PATH))
     dialog.title("Add Transaction")
     dialog.geometry("300x300")
     dialog.configure(fg_color='#1a1a1a')
     dialog.attributes('-topmost', True)
 
-    ctk.CTkLabel(dialog, text="Date (YYYY-MM-DD):").pack(pady=10)
+    ctk.CTkLabel(dialog, text="Date (YYYY-MM-DD):", font=font_regular).pack(pady=10)
     date_entry = ctk.CTkEntry(dialog)
     date_entry.pack(pady=5)
 
-    ctk.CTkButton(dialog, text="Select Date", command=lambda: select_date(date_entry)).pack(pady=5)
+    ctk.CTkButton(dialog, text="Select Date", command=lambda: select_date(date_entry), font=font_bold).pack(pady=5)
 
-    ctk.CTkLabel(dialog, text="Description:").pack(pady=10)
+    ctk.CTkLabel(dialog, text="Description:", font=font_regular).pack(pady=10)
     desc_entry = ctk.CTkEntry(dialog)
     desc_entry.pack(pady=5)
 
-    ctk.CTkLabel(dialog, text="Amount:").pack(pady=10)
+    ctk.CTkLabel(dialog, text="Amount:", font=font_regular).pack(pady=10)
     amount_entry = ctk.CTkEntry(dialog)
     amount_entry.pack(pady=5)
 
@@ -146,7 +208,61 @@ def add_transaction(is_income=True):
         except ValueError as e:
             messagebox.showerror("Error", f"Invalid input: {str(e)}")
 
-    ctk.CTkButton(dialog, text="Submit", command=submit).pack(pady=10)
+    ctk.CTkButton(dialog, text="Submit", command=submit, font=font_bold).pack(pady=10)
+
+# Function to show about
+def show_about():
+    dialog = ctk.CTkToplevel(root)
+    if ICON_PATH and os.path.exists(ICON_PATH):
+        dialog.after(250, lambda: dialog.iconbitmap(ICON_PATH))
+    dialog.title("About")
+    dialog.geometry("400x500")
+    dialog.configure(fg_color='#1a1a1a')
+    dialog.attributes('-topmost', True)
+
+    # Image 1 (Pulsar_Logo_Light.png, larger)
+    if IMAGE1_PATH and os.path.exists(IMAGE1_PATH):
+        try:
+            pil_img1 = Image.open(IMAGE1_PATH)
+            orig_width, orig_height = pil_img1.size
+            desired_width = 200
+            new_height = int((orig_height / orig_width) * desired_width)
+            img1 = ctk.CTkImage(light_image=pil_img1, dark_image=pil_img1, size=(desired_width, new_height))
+            label1 = ctk.CTkLabel(dialog, image=img1, text="")
+            label1.pack(pady=10)
+        except:
+            pass
+
+    # Image 2 (Nova_foundry_wide_transparent.png)
+    if IMAGE2_PATH and os.path.exists(IMAGE2_PATH):
+        try:
+            pil_img2 = Image.open(IMAGE2_PATH)
+            orig_width, orig_height = pil_img2.size
+            desired_width = 100
+            new_height = int((orig_height / orig_width) * desired_width)
+            img2 = ctk.CTkImage(light_image=pil_img2, dark_image=pil_img2, size=(desired_width, new_height))
+            label2 = ctk.CTkLabel(dialog, image=img2, text="")
+            label2.pack(pady=10)
+        except:
+            pass
+
+    # Text 1
+    text1_label = ctk.CTkLabel(dialog, text=ABOUT_TEXT1.format(Version=VERSION), font=font_bold)
+    text1_label.pack(pady=10)
+
+    # Link 1
+    link1_label = ctk.CTkLabel(dialog, text=LINK1_TEXT, text_color="blue", cursor="hand2", font=font_italic)
+    link1_label.pack(pady=5)
+    link1_label.bind("<Button-1>", lambda e: webbrowser.open(LINK1_URL))
+
+    # Link 2
+    link2_label = ctk.CTkLabel(dialog, text=LINK2_TEXT, text_color="blue", cursor="hand2", font=font_italic)
+    link2_label.pack(pady=5)
+    link2_label.bind("<Button-1>", lambda e: webbrowser.open(LINK2_URL))
+
+    # Text 2
+    text2_label = ctk.CTkLabel(dialog, text=ABOUT_TEXT2.format(Year=datetime.now().year), font=font_regular)
+    text2_label.pack(pady=10)
 
 # Function to reset data
 def reset_data():
@@ -301,30 +417,15 @@ def update_ui():
         scrollbar_graph.set(0, 1)
     canvas.draw()
 
-# On closing
-def on_closing():
-    try:
-        for seq in root.tk.eval('after info').split():
-            root.after_cancel(seq)
-    except:
-        pass
-    root.destroy()
-
-# Main window
-root = ctk.CTk()
-root.title("Financial Tracker")
-root.after(200, lambda: root.state('zoomed'))
-root.configure(fg_color='#1a1a1a')
-root.protocol("WM_DELETE_WINDOW", on_closing)
-
 # Button frame
 button_frame = ctk.CTkFrame(root, fg_color='#1a1a1a', corner_radius=20)
 button_frame.pack(fill='x', padx=20, pady=20)
 
-ctk.CTkButton(button_frame, text="Add Income", command=lambda: add_transaction(True), corner_radius=32, font=('Arial', 14)).pack(side='left', padx=10)
-ctk.CTkButton(button_frame, text="Add Spending", command=lambda: add_transaction(False), corner_radius=32, font=('Arial', 14)).pack(side='left', padx=10)
-ctk.CTkButton(button_frame, text="Export", command=export_data, corner_radius=32, font=('Arial', 14)).pack(side='left', padx=10)
-ctk.CTkButton(button_frame, text="Reset", command=reset_data, corner_radius=32, font=('Arial', 14)).pack(side='left', padx=10)
+ctk.CTkButton(button_frame, text="Add Income", command=lambda: add_transaction(True), corner_radius=32, font=font_bold).pack(side='left', padx=10)
+ctk.CTkButton(button_frame, text="Add Spending", command=lambda: add_transaction(False), corner_radius=32, font=font_bold).pack(side='left', padx=10)
+ctk.CTkButton(button_frame, text="Export", command=export_data, corner_radius=32, font=font_bold).pack(side='left', padx=10)
+ctk.CTkButton(button_frame, text="Reset", command=reset_data, corner_radius=32, font=font_bold, fg_color="red").pack(side='left', padx=10)
+ctk.CTkButton(button_frame, text="About", command=show_about, corner_radius=32, font=font_bold).pack(side='left', padx=10)
 
 # Transactions frame
 trans_frame = ctk.CTkFrame(root, fg_color='#1a1a1a', corner_radius=20)
@@ -334,9 +435,9 @@ trans_frame.grid_columnconfigure(0, weight=1)
 
 style = ttk.Style()
 style.theme_use("clam")
-style.configure("Treeview", background="#1a1a1a", foreground="white", fieldbackground="#1a1a1a", bordercolor="grey", borderwidth=1, lightcolor="grey", darkcolor="grey")
+style.configure("Treeview", background="#1a1a1a", foreground="white", fieldbackground="#1a1a1a", bordercolor="grey", borderwidth=1, lightcolor="grey", darkcolor="grey", font=font_regular)
 style.map("Treeview", background=[('selected', 'grey')])
-style.configure("Treeview.Heading", background="#2a2a2a", foreground="white", relief="flat")
+style.configure("Treeview.Heading", background="#2a2a2a", foreground="white", relief="flat", font=font_bold)
 style.map("Treeview.Heading", background=[('active', "#3a3a3a")])
 style.configure('even.Treeview', background='#242424')
 style.configure('odd.Treeview', background='#1a1a1a')
