@@ -51,7 +51,7 @@ Track your income and spending, visualize your financial trajectory with predict
 7. Use the **Export** button to back up your data or move it to a spreadsheet application
 
 <div>
-  <a href="https://info.flagcounter.com/YourNewID"><img src="https://s01.flagcounter.com/count2/TWw2/bg_0B0F1A/txt_FFFFFF/border_FFFFFF/columns_4/maxflags_20/viewers_0/labels_0/pageviews_1/flags_0/percent_1/" alt="Flag Counter" border="0"></a>
+  <a href="https://info.flagcounter.com/LcvB"><img src="https://s01.flagcounter.com/count2/LcvB/bg_0B0F1A/txt_FFFFFF/border_FFFFFF/columns_4/maxflags_20/viewers_0/labels_0/pageviews_1/flags_0/percent_1/" alt="Flag Counter" border="0"></a>
 </div>
 
 ---
