@@ -232,8 +232,8 @@ def open_about():
     if os.path.exists(ICON_PATH):
         try:
             my_image = ctk.CTkImage(light_image=Image.open(ICON_PATH), 
-                                  dark_image=Image.open(ICON_PATH), 
-                                  size=(100, 100))
+                                    dark_image=Image.open(ICON_PATH), 
+                                    size=(100, 100))
             img_label = ctk.CTkLabel(abt, image=my_image, text="")
             img_label.pack(pady=(30, 10))
         except: pass
@@ -410,6 +410,7 @@ def on_closing():
     except: pass
     finally: sys.exit(0)
 
+# --- FIX START: REPLACED DELETE LOGIC ---
 def delete_selected_history():
     sel = tree_main.selection()
     if not sel: 
@@ -417,9 +418,21 @@ def delete_selected_history():
         return
     
     if messagebox.askyesno("Confirm Delete", "Are you sure you want to delete the selected history item(s)?"):
-        load_data()
-        indices_to_delete = [tree_main.index(item) for item in sel]
-        df_static.drop(df_static.index[indices_to_delete], inplace=True)
+        try:
+            load_data()
+            # The 'iid' of the treeview items corresponds to the DataFrame index
+            indices_to_delete = [int(item) for item in sel]
+            
+            # Filter out invalid indices just in case
+            valid_indices = [i for i in indices_to_delete if i in df_static.index]
+            
+            if valid_indices:
+                df_static.drop(valid_indices, inplace=True)
+                df_static.to_csv(trans_path, index=False)
+                refresh_data()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to delete: {e}")
+# --- FIX END ---
 
 root.protocol("WM_DELETE_WINDOW", on_closing)
 root.after(200, lambda: root.state('zoomed'))
@@ -595,15 +608,14 @@ def update_lists():
     for i in tree_main.get_children(): tree_main.delete(i)
     for i in tree_recur.get_children(): tree_recur.delete(i)
 
+    # --- FIX START: Use Dataframe Index as IID ---
     if not df_static.empty:
-        # Sort for display
         hist_view = df_static.sort_values('Date', ascending=False)
-        
-        # FIX: Iterate with index so we can map the dataframe index to the treeview iid
-        for original_idx, row in hist_view.iterrows():
+        for idx, row in hist_view.iterrows():
             vals = (str(row['Date'].date()), row['Description'], f"{CURRENT_CURRENCY}{row['Amount']:.2f}")
-            # We set 'iid' to original_idx (as string) so we can retrieve it later
-            tree_main.insert('', 'end', iid=str(original_idx), values=vals)
+            # Bind the DataFrame index (idx) to the visual row (iid)
+            tree_main.insert('', 'end', iid=str(idx), values=vals)
+    # --- FIX END ---
 
     if not df_rules.empty:
         for _, row in df_rules.iterrows():
