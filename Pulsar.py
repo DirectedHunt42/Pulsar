@@ -19,7 +19,7 @@ ctk.set_default_color_theme("blue")
 # Configuration - customize these paths and settings
 DATA_FOLDER = '💲NovaFoundry'
 CSV_FILE = 'transactions.csv'
-ICON_PATH = "Icons/Pulsar_Icon.ico"  # Set your custom icon path here (e.g., .ico file)
+ICON_PATH = "Icons/Pulsar_Icon.ico"
 FONT_REGULAR_PATH = "Fonts/BeVietnamPro-Regular.ttf"
 FONT_BOLD_PATH = "Fonts/BeVietnamPro-Bold.ttf"
 FONT_ITALIC_PATH = "Fonts/BeVietnamPro-Italic.ttf"
@@ -72,7 +72,7 @@ def on_closing():
 
 # Main window
 root = ctk.CTk()
-root.title("Financial Tracker")
+root.title("Pulsar")
 if ICON_PATH and os.path.exists(ICON_PATH):
     root.iconbitmap(ICON_PATH)
 root.after(200, lambda: root.state('zoomed'))
