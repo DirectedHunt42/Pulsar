@@ -3,480 +3,599 @@ from tkinter import messagebox, filedialog, ttk
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.colors import LinearSegmentedColormap, Normalize
+from matplotlib.colors import ListedColormap, BoundaryNorm
 from matplotlib.collections import LineCollection
 import pandas as pd
 import numpy as np
 import os
-from datetime import datetime
-import calendar
-from PIL import Image
+from datetime import datetime, timedelta
+from dateutil.relativedelta import relativedelta
 import webbrowser
+from PIL import Image
+
+# --- Configuration ---
+DATA_FOLDER = '💲NovaFoundry'
+TRANS_FILE = 'transactions.csv'
+RECUR_FILE = 'recurring_rules.csv'
+ICON_PATH = "Icons/Pulsar_Icon.ico"
+VERSION = "1.1.0"
+APP_NAME = "Pulsar"
+COMPANY_NAME = "Nova Foundry"
+WEBSITE_URL = "https://novafoundry.ca"
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
-# Configuration - customize these paths and settings
-DATA_FOLDER = '💲NovaFoundry'
-CSV_FILE = 'transactions.csv'
-ICON_PATH = "Icons/Pulsar_Icon.ico"
-FONT_REGULAR_PATH = "Fonts/BeVietnamPro-Regular.ttf"
-FONT_BOLD_PATH = "Fonts/BeVietnamPro-Bold.ttf"
-FONT_ITALIC_PATH = "Fonts/BeVietnamPro-Italic.ttf"
-FONT_LIGHT_PATH = "Fonts/BeVietnamPro-Light.ttf"
-FONT_THIN_PATH = "Fonts/BeVietnamPro-Thin.ttf"
+# Font Setup
 FONT_REGULAR_FAMILY = "Be Vietnam Pro"
 FONT_BOLD_FAMILY = "Be Vietnam Pro Bold"
-FONT_ITALIC_FAMILY = "Be Vietnam Pro Italic"
-FONT_LIGHT_FAMILY = "Be Vietnam Pro Light"
-FONT_THIN_FAMILY = "Be Vietnam Pro Thin"
-IMAGE2_PATH = "Icons/Nova_foundry_wide_transparent.png"
-IMAGE1_PATH = "Icons/Pulsar_Logo_Light.png"
-ABOUT_TEXT1 = "Pulsar v{Version}"
-LINK1_URL = "https://novafoundry.ca"
-LINK1_TEXT = "Official Website"
-LINK2_URL = "https://buymeacoffee.com/novafoundry"
-LINK2_TEXT = "Support Nova Foundry"
-ABOUT_TEXT2 = "Developed by Nova Foundry. © {Year} All rights reserved."
-VERSION = "1.0.0"
 
-# Get the app data path
+# Get Paths
 app_data = os.environ.get('LOCALAPPDATA')
-if app_data is None:
-    messagebox.showerror("Error", "LOCALAPPDATA environment variable not found.")
-    exit(1)
-
+if app_data is None: exit(1)
 folder = os.path.join(app_data, DATA_FOLDER)
 os.makedirs(folder, exist_ok=True)
-csv_path = os.path.join(folder, CSV_FILE)
+trans_path = os.path.join(folder, TRANS_FILE)
+recur_path = os.path.join(folder, RECUR_FILE)
 
-# Load or initialize DataFrame
-if os.path.exists(csv_path):
-    df = pd.read_csv(csv_path)
-    if not df.empty:
-        df['Date'] = pd.to_datetime(df['Date'])
-        df = df.sort_values('Date').reset_index(drop=True)
-        df['Balance'] = df['Amount'].cumsum()
-        df.to_csv(csv_path, index=False)
-else:
-    df = pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Balance'])
+# --- Data Management ---
 
-# On closing
-def on_closing():
+def init_files():
+    if not os.path.exists(trans_path):
+        pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Type']).to_csv(trans_path, index=False)
+    
+    if not os.path.exists(recur_path):
+        pd.DataFrame(columns=['StartDate', 'Description', 'Amount', 'Interval', 'Unit']).to_csv(recur_path, index=False)
+
+init_files()
+
+df_static = pd.DataFrame()
+df_rules = pd.DataFrame()
+df_display = pd.DataFrame() 
+
+def load_data():
+    global df_static, df_rules
     try:
-        for seq in root.tk.eval('after info').split():
-            root.after_cancel(seq)
+        df_static = pd.read_csv(trans_path)
+        df_static['Date'] = pd.to_datetime(df_static['Date'])
     except:
-        pass
-    root.destroy()
+        df_static = pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Type'])
 
-# Main window
-root = ctk.CTk()
-root.title("Pulsar")
-if ICON_PATH and os.path.exists(ICON_PATH):
-    root.iconbitmap(ICON_PATH)
-root.after(200, lambda: root.state('zoomed'))
-root.configure(fg_color='#1a1a1a')
-root.protocol("WM_DELETE_WINDOW", on_closing)
+    try:
+        df_rules = pd.read_csv(recur_path)
+        df_rules['StartDate'] = pd.to_datetime(df_rules['StartDate'])
+    except:
+        df_rules = pd.DataFrame(columns=['StartDate', 'Description', 'Amount', 'Interval', 'Unit'])
 
-# Load custom fonts
-ctk.FontManager.load_font(FONT_REGULAR_PATH)
-ctk.FontManager.load_font(FONT_BOLD_PATH)
-ctk.FontManager.load_font(FONT_ITALIC_PATH)
-ctk.FontManager.load_font(FONT_LIGHT_PATH)
-ctk.FontManager.load_font(FONT_THIN_PATH)
+def generate_projection(years=1.0):
+    global df_display
+    load_data()
+    
+    generated_rows = []
+    # STRICT RENDER LIMIT: Forecast stops exactly 'years' from NOW
+    end_date = datetime.now() + timedelta(days=365 * years)
+    
+    if not df_rules.empty:
+        for _, rule in df_rules.iterrows():
+            current_date = rule['StartDate']
+            
+            # If the rule started in the past, we calculate from start to ensure balance accuracy
+            # but we only generate points up to end_date
+            while current_date <= end_date:
+                generated_rows.append({
+                    'Date': current_date,
+                    'Description': rule['Description'],
+                    'Amount': rule['Amount'],
+                    'Recurring': True
+                })
+                try: ival = int(rule['Interval'])
+                except: ival = 1
+                
+                if rule['Unit'] == 'Days': current_date += timedelta(days=ival)
+                elif rule['Unit'] == 'Weeks': current_date += timedelta(weeks=ival)
+                elif rule['Unit'] == 'Months': current_date += relativedelta(months=ival)
+                elif rule['Unit'] == 'Years': current_date += relativedelta(years=ival)
 
-# Define fonts
-font_regular = ctk.CTkFont(family=FONT_REGULAR_FAMILY, size=14)
-font_bold = ctk.CTkFont(family=FONT_BOLD_FAMILY, size=14)
-font_italic = ctk.CTkFont(family=FONT_ITALIC_FAMILY, size=14)
-font_light = ctk.CTkFont(family=FONT_LIGHT_FAMILY, size=14)
-font_thin = ctk.CTkFont(family=FONT_THIN_FAMILY, size=14)
+    frames_to_concat = []
+    if not df_static.empty:
+        temp_static = df_static.copy()
+        temp_static['Recurring'] = False
+        frames_to_concat.append(temp_static)
+        
+    if generated_rows:
+        frames_to_concat.append(pd.DataFrame(generated_rows))
+        
+    if frames_to_concat:
+        df_display = pd.concat(frames_to_concat, ignore_index=True)
+        df_display = df_display.sort_values('Date').reset_index(drop=True)
+        df_display['Balance'] = df_display['Amount'].cumsum()
+    else:
+        df_display = pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Balance', 'Recurring'])
 
-# Function to select date
-def select_date(entry):
-    cal_dialog = ctk.CTkToplevel(root)
+# --- File Operations ---
+
+def save_static(date, desc, amount):
+    new_row = pd.DataFrame([{'Date': date, 'Description': desc, 'Amount': amount, 'Type': 'Static'}])
+    if os.path.exists(trans_path) and os.path.getsize(trans_path) > 0:
+        new_row.to_csv(trans_path, mode='a', header=False, index=False)
+    else:
+        new_row.to_csv(trans_path, index=False)
+
+def save_rule(start_date, desc, amount, interval, unit, index_to_overwrite=None):
+    global df_rules
+    new_data = {'StartDate': start_date, 'Description': desc, 'Amount': amount, 'Interval': interval, 'Unit': unit}
+    
+    if index_to_overwrite is not None:
+        load_data()
+        if 0 <= index_to_overwrite < len(df_rules):
+            df_rules.loc[index_to_overwrite] = new_data
+            df_rules.to_csv(recur_path, index=False)
+    else:
+        new_row = pd.DataFrame([new_data])
+        if os.path.exists(recur_path) and os.path.getsize(recur_path) > 0:
+            new_row.to_csv(recur_path, mode='a', header=False, index=False)
+        else:
+            new_row.to_csv(recur_path, index=False)
+
+def delete_rule():
+    sel = tree_recur.selection()
+    if not sel: 
+        messagebox.showinfo("Selection Required", "Please click on a recurring item to delete it.")
+        return
+    
+    if messagebox.askyesno("Confirm Delete", "Are you sure you want to stop this recurring item?"):
+        idx = tree_recur.index(sel[0])
+        load_data()
+        df_rules.drop(df_rules.index[idx], inplace=True)
+        df_rules.to_csv(recur_path, index=False)
+        refresh_data()
+
+# --- Helper Functions ---
+
+def apply_icon(window):
     if ICON_PATH and os.path.exists(ICON_PATH):
-        cal_dialog.after(250, lambda: cal_dialog.iconbitmap(ICON_PATH))
-    cal_dialog.title("Select Date")
-    cal_dialog.geometry("350x350")
-    cal_dialog.after(250, lambda: cal_dialog.attributes('-topmost', True))
-
-    current_year = datetime.now().year
-    current_month = datetime.now().month
-
-    year_var = ctk.StringVar(value=str(current_year))
-    month_var = ctk.StringVar(value=str(current_month))
-
-    ctk.CTkLabel(cal_dialog, text="Year:", font=font_regular).pack(pady=5)
-    year_combo = ctk.CTkComboBox(cal_dialog, values=[str(y) for y in range(current_year - 10, current_year + 10)], variable=year_var)
-    year_combo.pack(pady=5)
-
-    ctk.CTkLabel(cal_dialog, text="Month:", font=font_regular).pack(pady=5)
-    month_combo = ctk.CTkComboBox(cal_dialog, values=[str(m) for m in range(1, 13)], variable=month_var)
-    month_combo.pack(pady=5)
-
-    days_frame = ctk.CTkFrame(cal_dialog)
-    days_frame.pack(pady=5)
-
-    def update_days(*args):
         try:
-            year = int(year_var.get())
-            month = int(month_var.get())
-        except ValueError:
-            return
+            window.after(200, lambda: window.iconbitmap(ICON_PATH))
+        except:
+            pass
 
-        for widget in days_frame.winfo_children():
-            widget.destroy()
+# --- Popups ---
 
-        cal = calendar.monthcalendar(year, month)
+def open_about():
+    abt = ctk.CTkToplevel(root)
+    abt.title("About")
+    abt.geometry("350x400")
+    abt.attributes('-topmost', True)
+    apply_icon(abt)
+    
+    if os.path.exists(ICON_PATH):
+        try:
+            my_image = ctk.CTkImage(light_image=Image.open(ICON_PATH), 
+                                  dark_image=Image.open(ICON_PATH), 
+                                  size=(100, 100))
+            img_label = ctk.CTkLabel(abt, image=my_image, text="")
+            img_label.pack(pady=(30, 10))
+        except: pass
 
-        weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-        for i, day in enumerate(weekdays):
-            ctk.CTkLabel(days_frame, text=day, width=4).grid(row=0, column=i, padx=2)
+    ctk.CTkLabel(abt, text=APP_NAME, font=(FONT_BOLD_FAMILY, 24)).pack()
+    ctk.CTkLabel(abt, text=f"Version {VERSION}", text_color="grey").pack(pady=(0, 20))
+    
+    ctk.CTkLabel(abt, text="Financial Forecasting Engine\nDesigned for Simplicity.", 
+                 font=(FONT_REGULAR_FAMILY, 14)).pack(pady=10)
+    
+    ctk.CTkLabel(abt, text="Created by", font=(FONT_REGULAR_FAMILY, 12, "italic")).pack(pady=(20,0))
+    
+    link = ctk.CTkLabel(abt, text=COMPANY_NAME, font=(FONT_BOLD_FAMILY, 14), 
+                        text_color="#3399ff", cursor="hand2")
+    link.pack()
+    link.bind("<Button-1>", lambda e: webbrowser.open(WEBSITE_URL))
+    
+    ctk.CTkButton(abt, text="Close", command=abt.destroy, fg_color="grey", width=100).pack(pady=30)
 
-        row = 1
-        for week in cal:
-            for i, day in enumerate(week):
-                if day == 0:
-                    ctk.CTkLabel(days_frame, text=' ', width=4).grid(row=row, column=i, padx=2)
-                else:
-                    btn = ctk.CTkButton(days_frame, text=str(day), width=40,
-                                        command=lambda d=day, y=year, m=month: set_date(y, m, d))
-                    btn.grid(row=row, column=i, padx=2, pady=2)
-            row += 1
-
-    def set_date(y, m, d):
-        entry.delete(0, 'end')
-        entry.insert(0, f"{y}-{m:02d}-{d:02d}")
-        cal_dialog.destroy()
-
-    update_days()
-    year_var.trace_add('write', update_days)
-    month_var.trace_add('write', update_days)
-
-# Function to add transaction
-def add_transaction(is_income=True):
+def open_transaction_dialog(is_income=True, edit_rule_idx=None):
     dialog = ctk.CTkToplevel(root)
-    if ICON_PATH and os.path.exists(ICON_PATH):
-        dialog.after(250, lambda: dialog.iconbitmap(ICON_PATH))
-    dialog.title("Add Transaction")
-    dialog.geometry("300x300")
-    dialog.configure(fg_color='#1a1a1a')
+    apply_icon(dialog)
+    
+    title_text = "Edit Recurring Item" if edit_rule_idx is not None else ("Add Income" if is_income else "Add Expense")
+    dialog.title(title_text)
+    dialog.geometry("420x600")
     dialog.attributes('-topmost', True)
+    
+    # Defaults
+    pre_date = datetime.now()
+    pre_desc = ""
+    pre_amt = ""
+    pre_recur = False
+    pre_int = "1"
+    pre_unit = "Months"
+    
+    if edit_rule_idx is not None:
+        load_data()
+        if 0 <= edit_rule_idx < len(df_rules):
+            row = df_rules.iloc[edit_rule_idx]
+            pre_date = row['StartDate']
+            pre_desc = row['Description']
+            pre_amt = abs(row['Amount'])
+            is_income = row['Amount'] >= 0
+            pre_recur = True
+            pre_int = str(row['Interval'])
+            pre_unit = row['Unit']
 
-    ctk.CTkLabel(dialog, text="Date (YYYY-MM-DD):", font=font_regular).pack(pady=10)
-    date_entry = ctk.CTkEntry(dialog)
-    date_entry.pack(pady=5)
+    # UI
+    ctk.CTkLabel(dialog, text="When?", font=(FONT_BOLD_FAMILY, 14)).pack(pady=(15,5))
+    
+    date_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+    date_frame.pack(pady=5)
+    entry_date = ctk.CTkEntry(date_frame, width=120, placeholder_text="YYYY-MM-DD")
+    entry_date.insert(0, pre_date.strftime('%Y-%m-%d'))
+    entry_date.pack(side='left', padx=5)
 
-    ctk.CTkButton(dialog, text="Select Date", command=lambda: select_date(date_entry), font=font_bold).pack(pady=5)
+    var_h = ctk.StringVar(value=f"{pre_date.hour:02d}")
+    var_m = ctk.StringVar(value=f"{pre_date.minute:02d}")
+    ctk.CTkComboBox(date_frame, values=[f"{x:02d}" for x in range(24)], variable=var_h, width=60).pack(side='left', padx=2)
+    ctk.CTkLabel(date_frame, text=":").pack(side='left')
+    ctk.CTkComboBox(date_frame, values=[f"{x:02d}" for x in range(60)], variable=var_m, width=60).pack(side='left', padx=2)
 
-    ctk.CTkLabel(dialog, text="Description:", font=font_regular).pack(pady=10)
-    desc_entry = ctk.CTkEntry(dialog)
-    desc_entry.pack(pady=5)
+    ctk.CTkLabel(dialog, text="What is it?", font=(FONT_BOLD_FAMILY, 14)).pack(pady=(15,5))
+    entry_desc = ctk.CTkEntry(dialog, placeholder_text="e.g. Netflix, Salary, Groceries")
+    entry_desc.insert(0, pre_desc)
+    entry_desc.pack(pady=5)
+    
+    ctk.CTkLabel(dialog, text="How much?", font=(FONT_BOLD_FAMILY, 14)).pack(pady=(15,5))
+    entry_amt = ctk.CTkEntry(dialog, placeholder_text="0.00")
+    if pre_amt: entry_amt.insert(0, str(pre_amt))
+    entry_amt.pack(pady=5)
 
-    ctk.CTkLabel(dialog, text="Amount:", font=font_regular).pack(pady=10)
-    amount_entry = ctk.CTkEntry(dialog)
-    amount_entry.pack(pady=5)
+    recur_frame = ctk.CTkFrame(dialog, border_width=1, border_color="#3a3a3a", corner_radius=10)
+    recur_frame.pack(fill='x', padx=20, pady=20)
+    
+    var_is_recur = ctk.BooleanVar(value=pre_recur)
+    
+    def toggle_recur():
+        state = 'normal' if var_is_recur.get() else 'disabled'
+        entry_int.configure(state=state)
+        combo_unit.configure(state=state)
+
+    chk_recur = ctk.CTkCheckBox(recur_frame, text="This happens repeatedly (Recurring)", variable=var_is_recur, command=toggle_recur, font=(FONT_REGULAR_FAMILY, 12))
+    chk_recur.pack(pady=15)
+    if edit_rule_idx is not None: chk_recur.configure(state='disabled')
+
+    f_int = ctk.CTkFrame(recur_frame, fg_color="transparent")
+    f_int.pack(pady=(0, 15))
+    ctk.CTkLabel(f_int, text="Repeats Every").pack(side='left')
+    entry_int = ctk.CTkEntry(f_int, width=40)
+    entry_int.insert(0, pre_int)
+    entry_int.pack(side='left', padx=10)
+    combo_unit = ctk.CTkComboBox(f_int, values=["Days", "Weeks", "Months", "Years"], width=100)
+    combo_unit.set(pre_unit)
+    combo_unit.pack(side='left')
+    toggle_recur() 
 
     def submit():
         try:
-            date_str = date_entry.get()
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            date = date_obj.strftime('%Y-%m-%d %H:%M:%S')
+            full_date = f"{entry_date.get()} {var_h.get()}:{var_m.get()}:00"
+            if not entry_amt.get(): raise ValueError("Please enter an amount.")
+            amt = float(entry_amt.get())
+            final_amt = abs(amt) if is_income else -abs(amt)
+            desc = entry_desc.get() or ("Income" if is_income else "Expense")
             
-            amount = float(amount_entry.get())
-            if not is_income:
-                amount = -amount
-            desc = desc_entry.get() or ("Income" if is_income else "Spending")
-            
-            new_row = {'Date': date, 'Description': desc, 'Amount': amount, 'Balance': 0}  # Balance temp
-            global df
-            new_df = pd.DataFrame([new_row])
-            if df.empty:
-                df = new_df
+            if var_is_recur.get():
+                if not entry_int.get().isdigit(): raise ValueError("Interval must be a number.")
+                interval = int(entry_int.get())
+                unit = combo_unit.get()
+                save_rule(full_date, desc, final_amt, interval, unit, index_to_overwrite=edit_rule_idx)
             else:
-                df = pd.concat([df, new_df], ignore_index=True)
+                save_static(full_date, desc, final_amt)
             
-            df['Date'] = pd.to_datetime(df['Date'])
-            df = df.sort_values('Date').reset_index(drop=True)
-            df['Balance'] = df['Amount'].cumsum()
-            
-            df.to_csv(csv_path, index=False)
-            update_ui()
+            refresh_data()
             dialog.destroy()
-        except ValueError as e:
-            messagebox.showerror("Error", f"Invalid input: {str(e)}")
+        except ValueError as ve: messagebox.showwarning("Input Error", str(ve))
+        except Exception as e: messagebox.showerror("System Error", str(e))
 
-    ctk.CTkButton(dialog, text="Submit", command=submit, font=font_bold).pack(pady=10)
+    btn_text = "Update Item" if edit_rule_idx is not None else "Save Item"
+    ctk.CTkButton(dialog, text=btn_text, command=submit, fg_color="#2cc985" if is_income else "#ff4d4d", 
+                  text_color="white", corner_radius=20, font=(FONT_BOLD_FAMILY, 14)).pack(pady=10)
 
-# Function to show about
-def show_about():
-    dialog = ctk.CTkToplevel(root)
-    if ICON_PATH and os.path.exists(ICON_PATH):
-        dialog.after(250, lambda: dialog.iconbitmap(ICON_PATH))
-    dialog.title("About")
-    dialog.geometry("400x500")
-    dialog.configure(fg_color='#1a1a1a')
-    dialog.attributes('-topmost', True)
+def edit_selected_rule():
+    sel = tree_recur.selection()
+    if not sel: 
+        messagebox.showinfo("Selection Required", "Please click on a recurring item to edit it.")
+        return
+    idx = tree_recur.index(sel[0])
+    open_transaction_dialog(edit_rule_idx=idx)
 
-    # Image 1 (Pulsar_Logo_Light.png, larger)
-    if IMAGE1_PATH and os.path.exists(IMAGE1_PATH):
-        try:
-            pil_img1 = Image.open(IMAGE1_PATH)
-            orig_width, orig_height = pil_img1.size
-            desired_width = 200
-            new_height = int((orig_height / orig_width) * desired_width)
-            img1 = ctk.CTkImage(light_image=pil_img1, dark_image=pil_img1, size=(desired_width, new_height))
-            label1 = ctk.CTkLabel(dialog, image=img1, text="")
-            label1.pack(pady=10)
-        except:
-            pass
-
-    # Image 2 (Nova_foundry_wide_transparent.png)
-    if IMAGE2_PATH and os.path.exists(IMAGE2_PATH):
-        try:
-            pil_img2 = Image.open(IMAGE2_PATH)
-            orig_width, orig_height = pil_img2.size
-            desired_width = 100
-            new_height = int((orig_height / orig_width) * desired_width)
-            img2 = ctk.CTkImage(light_image=pil_img2, dark_image=pil_img2, size=(desired_width, new_height))
-            label2 = ctk.CTkLabel(dialog, image=img2, text="")
-            label2.pack(pady=10)
-        except:
-            pass
-
-    # Text 1
-    text1_label = ctk.CTkLabel(dialog, text=ABOUT_TEXT1.format(Version=VERSION), font=font_bold)
-    text1_label.pack(pady=10)
-
-    # Link 1
-    link1_label = ctk.CTkLabel(dialog, text=LINK1_TEXT, text_color="blue", cursor="hand2", font=font_italic)
-    link1_label.pack(pady=5)
-    link1_label.bind("<Button-1>", lambda e: webbrowser.open(LINK1_URL))
-
-    # Link 2
-    link2_label = ctk.CTkLabel(dialog, text=LINK2_TEXT, text_color="blue", cursor="hand2", font=font_italic)
-    link2_label.pack(pady=5)
-    link2_label.bind("<Button-1>", lambda e: webbrowser.open(LINK2_URL))
-
-    # Text 2
-    text2_label = ctk.CTkLabel(dialog, text=ABOUT_TEXT2.format(Year=datetime.now().year), font=font_regular)
-    text2_label.pack(pady=10)
-
-# Function to reset data
 def reset_data():
-    if messagebox.askyesno("Confirm", "Are you sure you want to reset all transactions?"):
-        global df
-        df = pd.DataFrame(columns=['Date', 'Description', 'Amount', 'Balance'])
-        if os.path.exists(csv_path):
-            os.remove(csv_path)
-        update_ui()
-
-# Function to export
-def export_data():
-    file = filedialog.asksaveasfilename(
-        defaultextension=".csv",
-        filetypes=[("CSV", "*.csv"), ("Excel", "*.xlsx"), ("OpenDocument Spreadsheet", "*.ods")]
-    )
-    if file:
+    if messagebox.askyesno("Confirm Reset", "This will delete ALL your data including transactions and recurring items. Are you sure?"):
         try:
-            if file.endswith('.csv'):
-                df.to_csv(file, index=False)
-            elif file.endswith('.xlsx'):
-                df.to_excel(file, index=False)
-            elif file.endswith('.ods'):
-                # Note: Requires odfpy installed (pip install odfpy)
-                df.to_excel(file, index=False, engine='odf')
-            messagebox.showinfo("Success", "Export successful.")
+            if os.path.exists(trans_path): os.remove(trans_path)
+            if os.path.exists(recur_path): os.remove(recur_path)
+            init_files()
+            refresh_data()
         except Exception as e:
-            messagebox.showerror("Error", f"Export failed: {str(e)}")
+            messagebox.showerror("Error", f"Failed to reset data: {str(e)}")
 
-# Function to scroll x
-def scroll_x(*args):
-    if args[0] == 'scroll':
-        units = float(args[1])
-        type_ = args[2] if len(args) > 2 else 'units'
-        if type_ == 'pages':
-            delta = units * 0.9
-        else:
-            delta = units * 0.1
-        low, high = scrollbar_graph.get()
-        size = high - low
-        new_low = low + delta * size
-        new_low = max(0, min(new_low, 1 - size))
-        scrollbar_graph.set(new_low, new_low + size)
-    elif args[0] == 'moveto':
-        new_low = float(args[1])
-        size = scrollbar_graph.get()[1] - scrollbar_graph.get()[0]
-        new_low = max(0, min(new_low, 1 - size))
-        scrollbar_graph.set(new_low, new_low + size)
-    update_lim()
+# --- Main App ---
 
-# Function to update lim
-def update_lim():
-    low, high = scrollbar_graph.get()
-    xmin, xmax = full_xlim
-    width = xmax - xmin
-    ax.set_xlim(xmin + low * width, xmin + high * width)
-    canvas.draw_idle()
+root = ctk.CTk()
+root.title(APP_NAME)
+root.configure(fg_color='#1a1a1a')
+apply_icon(root)
 
-full_xlim = None
+def on_closing():
+    try: root.quit(); root.destroy()
+    except: pass
+root.protocol("WM_DELETE_WINDOW", on_closing)
+root.after(200, lambda: root.state('zoomed'))
 
-# Function to update UI
-def update_ui():
-    global full_xlim
-    for item in tree.get_children():
-        tree.delete(item)
-    if df.empty:
-        tree.insert('', 'end', values=("No transactions yet", "", "", "", "", "", ""))
-    else:
-        for idx, row in df.iterrows():
-            tag = 'even' if idx % 2 == 0 else 'odd'
-            tree.insert('', 'end', values=(str(row['Date']), '│', row['Description'], '│', f"{row['Amount']:.2f}", '│', f"{row['Balance']:.2f}"), tags=(tag,))
+font_reg = ctk.CTkFont(family=FONT_REGULAR_FAMILY, size=13)
+font_bold = ctk.CTkFont(family=FONT_BOLD_FAMILY, size=13)
+font_large = ctk.CTkFont(family=FONT_BOLD_FAMILY, size=24)
+
+# 1. Top Control Bar
+ctrl_frame = ctk.CTkFrame(root, height=60, corner_radius=20)
+ctrl_frame.pack(fill='x', padx=15, pady=10)
+
+ctk.CTkButton(ctrl_frame, text="+ Add Income", command=lambda: open_transaction_dialog(True), 
+              fg_color="#2cc985", hover_color="#25a870", corner_radius=20, width=120, font=font_bold).pack(side='left', padx=10, pady=10)
+
+ctk.CTkButton(ctrl_frame, text="+ Add Spending", command=lambda: open_transaction_dialog(False), 
+              fg_color="#ff4d4d", hover_color="#cc3d3d", corner_radius=20, width=120, font=font_bold).pack(side='left', padx=10, pady=10)
+
+ctk.CTkButton(ctrl_frame, text="Reset Data", command=reset_data, fg_color="#ff9900", hover_color="#cc7a00", corner_radius=20, width=120, font=font_bold).pack(side='left', padx=10, pady=10)
+
+# Settings
+ctk.CTkLabel(ctrl_frame, text="Forecast Range:", font=font_bold).pack(side='left', padx=(30, 5))
+proj_var = ctk.StringVar(value="1 Year")
+ctk.CTkComboBox(ctrl_frame, values=["1 Year", "2 Years", "5 Years", "10 Years"], variable=proj_var, command=lambda x: refresh_data(), width=110).pack(side='left')
+
+ctk.CTkLabel(ctrl_frame, text="Zoom Level:", font=font_bold).pack(side='left', padx=(20, 5))
+scale_var = ctk.StringVar(value="1 Year")
+ctk.CTkComboBox(ctrl_frame, values=["1 Month", "6 Months", "1 Year", "2 Years", "All Time"], variable=scale_var, command=lambda x: update_graph(), width=110).pack(side='left')
+
+ctk.CTkButton(ctrl_frame, text="About", command=open_about, fg_color="transparent", border_width=1, 
+              text_color="#aaaaaa", corner_radius=20, width=80).pack(side='right', padx=10)
+
+# 2. Prediction Dashboard
+pred_frame = ctk.CTkFrame(root, corner_radius=20, fg_color="#2b2b2b")
+pred_frame.pack(fill='x', padx=15, pady=(0, 10))
+
+lbl_pred_title = ctk.CTkLabel(pred_frame, text="Financial Health Forecast", font=(FONT_REGULAR_FAMILY, 12), text_color="grey")
+lbl_pred_title.pack(pady=(10, 0))
+lbl_pred_main = ctk.CTkLabel(pred_frame, text="Calculating...", font=font_large)
+lbl_pred_main.pack(pady=5)
+lbl_pred_sub = ctk.CTkLabel(pred_frame, text="...", font=(FONT_REGULAR_FAMILY, 14), text_color="#aaaaaa")
+lbl_pred_sub.pack(pady=(0, 10))
+
+# 3. Split View
+content = ctk.CTkFrame(root, corner_radius=20, fg_color="transparent")
+content.pack(fill='both', expand=True, padx=10, pady=5)
+content.columnconfigure(0, weight=1)
+content.columnconfigure(1, weight=1)
+content.rowconfigure(1, weight=1)
+
+# Left: History
+f_left = ctk.CTkFrame(content, corner_radius=15, border_color="#3a3a3a", border_width=1)
+f_left.grid(row=1, column=0, sticky='nsew', padx=(0,5))
+f_left.rowconfigure(1, weight=1)
+f_left.columnconfigure(0, weight=1)
+
+ctk.CTkLabel(f_left, text="History (One-Time Only)", font=(FONT_BOLD_FAMILY, 16)).grid(row=0, column=0, sticky='w', padx=15, pady=10)
+tree_main = ttk.Treeview(f_left, columns=('Date', 'Desc', 'Amt'), show='headings')
+tree_main.heading('Date', text='Date'); tree_main.column('Date', width=100)
+tree_main.heading('Desc', text='Description'); tree_main.column('Desc', width=200)
+tree_main.heading('Amt', text='Amount'); tree_main.column('Amt', width=80)
+tree_main.grid(row=1, column=0, sticky='nsew', padx=10, pady=(0,10))
+sc1 = ctk.CTkScrollbar(f_left, command=tree_main.yview); sc1.grid(row=1, column=1, sticky='ns', padx=(0,10), pady=(0,10)); tree_main.configure(yscrollcommand=sc1.set)
+
+# Right: Rules
+f_right = ctk.CTkFrame(content, corner_radius=15, border_color="#3a3a3a", border_width=1)
+f_right.grid(row=1, column=1, sticky='nsew', padx=(5,0))
+f_right.rowconfigure(1, weight=1)
+f_right.columnconfigure(0, weight=1)
+
+ctk.CTkLabel(f_right, text="Recurring Bills & Income", font=(FONT_BOLD_FAMILY, 16)).grid(row=0, column=0, sticky='w', padx=15, pady=10)
+tree_recur = ttk.Treeview(f_right, columns=('Date', 'Desc', 'Amt', 'Freq'), show='headings')
+tree_recur.heading('Date', text='Next/Start Date'); tree_recur.column('Date', width=100)
+tree_recur.heading('Desc', text='Description'); tree_recur.column('Desc', width=150)
+tree_recur.heading('Amt', text='Amount'); tree_recur.column('Amt', width=80)
+tree_recur.heading('Freq', text='Repeats Every'); tree_recur.column('Freq', width=100)
+tree_recur.grid(row=1, column=0, sticky='nsew', padx=10, pady=(0,5))
+sc2 = ctk.CTkScrollbar(f_right, command=tree_recur.yview); sc2.grid(row=1, column=1, sticky='ns', padx=(0,10), pady=(0,5)); tree_recur.configure(yscrollcommand=sc2.set)
+
+f_r_btns = ctk.CTkFrame(f_right, fg_color="transparent")
+f_r_btns.grid(row=2, column=0, sticky='ew', padx=10, pady=10)
+ctk.CTkButton(f_r_btns, text="Edit Item", command=edit_selected_rule, height=30, corner_radius=15).pack(side='left', padx=5)
+ctk.CTkButton(f_r_btns, text="Delete Item", command=delete_rule, fg_color="#bf2c2c", hover_color="#992323", height=30, corner_radius=15).pack(side='right', padx=5)
+
+# 4. Graph
+graph_frame = ctk.CTkFrame(root, height=280, corner_radius=20)
+graph_frame.pack(fill='x', padx=15, pady=10)
+
+fig, ax = plt.subplots(figsize=(10, 3), facecolor='#2b2b2b')
+canvas = FigureCanvasTkAgg(fig, master=graph_frame)
+canvas.get_tk_widget().pack(fill='both', expand=True, padx=5, pady=(5, 0))
+
+# Scrollbar for Graph
+graph_scrollbar = ctk.CTkScrollbar(graph_frame, orientation='horizontal', height=16)
+graph_scrollbar.pack(fill='x', padx=5, pady=5)
+
+# --- Scroll Logic ---
+current_scroll_pos = 1.0 # Default to end (future)
+
+def on_scroll_graph(*args):
+    global current_scroll_pos
+    if args[0] == 'moveto':
+        current_scroll_pos = float(args[1])
+        update_graph(preserve_scroll=True)
+    elif args[0] == 'scroll':
+        # Simple step handling
+        step = int(args[1])
+        current_scroll_pos = max(0.0, min(1.0, current_scroll_pos + (step * 0.05)))
+        update_graph(preserve_scroll=True)
+
+graph_scrollbar.configure(command=on_scroll_graph)
+
+# --- Update Logic ---
+
+def update_prediction_ui():
+    if df_display.empty:
+        lbl_pred_main.configure(text="No Data Available", text_color="grey")
+        return
+
+    try: 
+        p_text = proj_var.get()
+        years = int(p_text.split()[0])
+    except: 
+        years = 1
+        p_text = "1 Year"
+
+    now = datetime.now()
+    target_date = now + timedelta(days=365*years)
     
+    past_mask = df_display['Date'] <= now
+    if past_mask.any(): current_bal = df_display.loc[past_mask, 'Balance'].iloc[-1]
+    else: current_bal = 0.0
+
+    future_mask = df_display['Date'] <= target_date
+    if future_mask.any(): final_bal = df_display.loc[future_mask, 'Balance'].iloc[-1]
+    else: final_bal = current_bal
+
+    net_change = final_bal - current_bal
+    sign = "+" if net_change >= 0 else "-"
+    color = "#2cc985" if net_change >= 0 else "#ff4d4d"
+    
+    lbl_pred_title.configure(text=f"Forecast for the next {p_text}")
+    lbl_pred_main.configure(text=f"{sign}${abs(net_change):,.2f}", text_color=color)
+    lbl_pred_sub.configure(text=f"Projected Balance: ${final_bal:,.2f}")
+
+def refresh_data():
+    try: years = int(proj_var.get().split()[0])
+    except: years = 1
+    generate_projection(years)
+    update_lists()
+    update_prediction_ui()
+    # Reset scroll to start (Present day) roughly, or keep at 0
+    # Ideally, we want to see 'Now'.
+    # We will let update_graph handle the initial centering
+    update_graph(preserve_scroll=False)
+
+def update_lists():
+    for i in tree_main.get_children(): tree_main.delete(i)
+    for i in tree_recur.get_children(): tree_recur.delete(i)
+
+    if not df_static.empty:
+        hist_view = df_static.sort_values('Date', ascending=False)
+        for _, row in hist_view.iterrows():
+            vals = (str(row['Date'].date()), row['Description'], f"{row['Amount']:.2f}")
+            tree_main.insert('', 'end', values=vals)
+
+    if not df_rules.empty:
+        for _, row in df_rules.iterrows():
+            freq_str = f"Every {row['Interval']} {row['Unit']}"
+            vals = (str(row['StartDate'].date()), row['Description'], f"{row['Amount']:.2f}", freq_str)
+            tree_recur.insert('', 'end', values=vals)
+
+def update_graph(preserve_scroll=True):
     ax.clear()
-    ax.set_facecolor('#1a1a1a')
-    if not df.empty:
-        dates = df['Date'].to_numpy()
-        balances = df['Balance'].to_numpy()
-        dates_num = mdates.date2num(dates)
-        last_x = dates_num.max()
-        full_min = dates_num.min()
+    ax.set_facecolor('#2b2b2b')
+    if df_display.empty: canvas.draw(); return
 
-        if len(balances) > 1:
-            deltas = np.diff(balances)
-            points = np.column_stack([dates_num, balances]).reshape(-1, 1, 2)
-            segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    # Total Range
+    min_date = df_display['Date'].min()
+    max_date = df_display['Date'].max()
+    total_days = (max_date - min_date).days
+    if total_days <= 0: total_days = 1
 
-            max_abs = np.max(np.abs(deltas))
-            norm = Normalize(-max_abs, max_abs)
-            cmap = plt.colormaps.get_cmap('RdYlGn')
-
-            lc = LineCollection(segments, cmap=cmap, norm=norm)
-            lc.set_array(deltas)
-            lc.set_linewidth(2)
-            ax.add_collection(lc)
-
-            # Predictions
-            x = dates_num
-            y = balances
-            coef = np.polyfit(x, y, 1)
-            future_x = np.arange(last_x + 1, last_x + 31)
-            pred_y = np.polyval(coef, future_x)
-            ax.plot(np.concatenate((np.array([last_x]), future_x)), np.concatenate((np.array([y[-1]]), pred_y)), color='grey', linestyle='--')
-            full_max = future_x.max()
+    # Determine View Span
+    scale = scale_var.get()
+    view_days = total_days # Default All
+    if scale == "1 Month": view_days = 30
+    elif scale == "6 Months": view_days = 180
+    elif scale == "1 Year": view_days = 365
+    elif scale == "2 Years": view_days = 730
+    
+    # Calculate visible ratio for scrollbar
+    visible_ratio = min(1.0, view_days / total_days)
+    
+    # Set X-Limits based on Scroll
+    # If preserve_scroll is False (e.g. data refresh), try to center on TODAY
+    global current_scroll_pos
+    
+    if not preserve_scroll:
+        # Calculate where 'now' is in the range 0..1
+        now = datetime.now()
+        if min_date <= now <= max_date:
+            days_until_now = (now - min_date).days
+            # Center it: position represents the START of the view window
+            # We want 'now' to be roughly at the left side or center? 
+            # Usually left side for "Forecast"
+            current_scroll_pos = days_until_now / total_days
         else:
-            ax.plot(dates_num, balances, color='white')
-            full_max = last_x
+            current_scroll_pos = 0.0 # Start
 
-        full_xlim = (full_min, full_max)
-        data_range = last_x - full_min
-        visible_days = min(30, data_range)
-        if visible_days > 0:
-            initial_left = last_x - visible_days
-            initial_right = last_x
-            low = max(0, (initial_left - full_min) / (full_max - full_min))
-            high = min(1, (initial_right - full_min) / (full_max - full_min))
-            ax.set_xlim(initial_left, initial_right)
-            scrollbar_graph.set(low, high)
-        else:
-            ax.set_xlim(full_min - 0.5, full_max + 0.5)
-            scrollbar_graph.set(0, 1)
+    # Clamp
+    max_pos = 1.0 - visible_ratio
+    current_scroll_pos = max(0.0, min(max_pos, current_scroll_pos))
+    
+    # Update Scrollbar UI
+    graph_scrollbar.set(current_scroll_pos, current_scroll_pos + visible_ratio)
+    
+    # Apply Limits
+    start_offset_days = total_days * current_scroll_pos
+    view_start_date = min_date + timedelta(days=start_offset_days)
+    view_end_date = view_start_date + timedelta(days=view_days)
+    
+    # Filter for Plotting (Optimization: Only plot visible + buffer)
+    # Actually just set xlim is faster if points aren't huge
+    df_plot = df_display # Plot all, clip with view
+    
+    dates = df_plot['Date'].to_numpy()
+    balances = df_plot['Balance'].to_numpy()
+    dates_num = mdates.date2num(dates)
 
-        # Gradient shading for positive
-        cmap_green = LinearSegmentedColormap.from_list('green_fade', [(0,1,0,0), (0,1,0,0.3)])
-        poly_pos = ax.fill_between(dates_num, balances, 0, where=(balances >= 0), lw=0, color='none')
-        for path in poly_pos.get_paths():
-            verts = path.vertices
-            xmin, xmax = verts[:,0].min(), verts[:,0].max()
-            ymin, ymax = 0, verts[:,1].max()
-            grad = ax.imshow(np.linspace(0,1,256).reshape(-1,1), cmap=cmap_green, aspect='auto', extent=[xmin, xmax, ymin, ymax], origin='lower')
-            grad.set_clip_path(path, transform=ax.transData)
-
-        # Gradient shading for negative
-        cmap_red = LinearSegmentedColormap.from_list('red_fade', [(1,0,0,0.3), (1,0,0,0)])
-        poly_neg = ax.fill_between(dates_num, balances, 0, where=(balances <= 0), lw=0, color='none')
-        for path in poly_neg.get_paths():
-            verts = path.vertices
-            xmin, xmax = verts[:,0].min(), verts[:,0].max()
-            ymin, ymax = verts[:,1].min(), 0
-            grad = ax.imshow(np.linspace(0,1,256).reshape(-1,1), cmap=cmap_red, aspect='auto', extent=[xmin, xmax, ymin, ymax], origin='lower')
-            grad.set_clip_path(path, transform=ax.transData)
-
-        ax.set_xlabel('Date', color='white')
-        ax.set_ylabel('Balance', color='white')
-        ax.tick_params(colors='white')
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-        for spine in ax.spines.values():
-            spine.set_edgecolor('white')
-        fig.autofmt_xdate()
+    points = np.column_stack([dates_num, balances]).reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+    
+    deltas = np.diff(balances)
+    cmap = ListedColormap(['#ff3333', '#2cc985'])
+    norm = BoundaryNorm([-float('inf'), 0, float('inf')], cmap.N)
+    lc = LineCollection(segments, cmap=cmap, norm=norm)
+    lc.set_array(deltas)
+    lc.set_linewidth(2)
+    ax.add_collection(lc)
+    
+    # Set Limits
+    ax.set_xlim(mdates.date2num(view_start_date), mdates.date2num(view_end_date))
+    
+    # Dynamic Y-Lim based on visible data
+    # Filter rows in view
+    mask = (df_display['Date'] >= view_start_date) & (df_display['Date'] <= view_end_date)
+    visible_bals = df_display.loc[mask, 'Balance']
+    if not visible_bals.empty:
+        y_min, y_max = visible_bals.min(), visible_bals.max()
+        margin = (y_max - y_min) * 0.1 if y_max != y_min else 100
+        ax.set_ylim(y_min - margin, y_max + margin)
     else:
-        ax.text(0.5, 0.5, 'No data yet', horizontalalignment='center', verticalalignment='center', color='white', fontsize=12)
-        scrollbar_graph.set(0, 1)
+        # Fallback if empty view
+        ax.set_ylim(balances.min(), balances.max())
+
+    ax.fill_between(dates_num, balances, 0, where=(balances>=0), color='#2cc985', alpha=0.1)
+    ax.fill_between(dates_num, balances, 0, where=(balances<0), color='#ff3333', alpha=0.1)
+    
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
+    ax.tick_params(colors='#aaaaaa', labelsize=9)
+    for s in ax.spines.values(): s.set_edgecolor('#404040')
+    ax.set_ylabel("Balance ($)", color='#aaaaaa')
+    ax.grid(True, color='#404040', alpha=0.3)
+    fig.autofmt_xdate()
     canvas.draw()
 
-# Button frame
-button_frame = ctk.CTkFrame(root, fg_color='#1a1a1a', corner_radius=20)
-button_frame.pack(fill='x', padx=20, pady=20)
+# Styles
+s = ttk.Style()
+s.theme_use('clam')
+s.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", borderwidth=0, font=font_reg, rowheight=25)
+s.configure("Treeview.Heading", background="#1a1a1a", foreground="white", relief="flat", font=font_bold)
+s.map("Treeview", background=[('selected', '#1f538d')])
 
-ctk.CTkButton(button_frame, text="Add Income", command=lambda: add_transaction(True), corner_radius=32, font=font_bold).pack(side='left', padx=10)
-ctk.CTkButton(button_frame, text="Add Spending", command=lambda: add_transaction(False), corner_radius=32, font=font_bold).pack(side='left', padx=10)
-ctk.CTkButton(button_frame, text="Export", command=export_data, corner_radius=32, font=font_bold).pack(side='left', padx=10)
-ctk.CTkButton(button_frame, text="Reset", command=reset_data, corner_radius=32, font=font_bold, fg_color="red").pack(side='left', padx=10)
-ctk.CTkButton(button_frame, text="About", command=show_about, corner_radius=32, font=font_bold).pack(side='left', padx=10)
-
-# Transactions frame
-trans_frame = ctk.CTkFrame(root, fg_color='#1a1a1a', corner_radius=20)
-trans_frame.pack(fill='both', expand=True, padx=20, pady=10, side='top')
-trans_frame.grid_rowconfigure(0, weight=1)
-trans_frame.grid_columnconfigure(0, weight=1)
-
-style = ttk.Style()
-style.theme_use("clam")
-style.configure("Treeview", background="#1a1a1a", foreground="white", fieldbackground="#1a1a1a", bordercolor="grey", borderwidth=1, lightcolor="grey", darkcolor="grey", font=font_regular)
-style.map("Treeview", background=[('selected', 'grey')])
-style.configure("Treeview.Heading", background="#2a2a2a", foreground="white", relief="flat", font=font_bold)
-style.map("Treeview.Heading", background=[('active', "#3a3a3a")])
-style.configure('even.Treeview', background='#242424')
-style.configure('odd.Treeview', background='#1a1a1a')
-
-tree = ttk.Treeview(trans_frame, columns=('Date', 'sep1', 'Description', 'sep2', 'Amount', 'sep3', 'Balance'), show='headings', height=10)
-tree.heading('Date', text='Date')
-tree.heading('sep1', text='')
-tree.heading('Description', text='Description')
-tree.heading('sep2', text='')
-tree.heading('Amount', text='Amount')
-tree.heading('sep3', text='')
-tree.heading('Balance', text='Balance')
-tree.column('Date', width=200, anchor='center')
-tree.column('sep1', width=2, anchor='center', stretch=False)
-tree.column('Description', width=300, anchor='center')
-tree.column('sep2', width=2, anchor='center', stretch=False)
-tree.column('Amount', width=100, anchor='center')
-tree.column('sep3', width=2, anchor='center', stretch=False)
-tree.column('Balance', width=100, anchor='center')
-tree.grid(row=0, column=0, sticky='nsew', padx=10, pady=10)
-
-scrollbar = ctk.CTkScrollbar(trans_frame, command=tree.yview)
-scrollbar.grid(row=0, column=1, sticky='ns')
-
-tree.configure(yscrollcommand=scrollbar.set)
-
-# Graph frame
-graph_frame = ctk.CTkFrame(root, fg_color='#1a1a1a', corner_radius=20)
-graph_frame.pack(fill='both', expand=True, padx=20, pady=10, side='top')
-
-fig, ax = plt.subplots(figsize=(8, 3), facecolor='#1a1a1a')
-ax.set_facecolor('#1a1a1a')
-canvas = FigureCanvasTkAgg(fig, master=graph_frame)
-canvas.get_tk_widget().pack(fill='both', expand=True)
-
-scrollbar_graph = ctk.CTkScrollbar(graph_frame, orientation='horizontal', command=scroll_x)
-scrollbar_graph.pack(fill='x')
-
-# Initial update
-update_ui()
-
+refresh_data()
 root.mainloop()
