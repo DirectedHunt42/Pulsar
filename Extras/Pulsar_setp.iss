@@ -3,7 +3,7 @@
 ; Non-commercial use only
 
 #define MyAppName "Pulsar"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.0"
 #define MyAppPublisher "Nova Foundry"
 #define MyAppURL "https://www.novafoundry.ca/"
 #define MyAppExeName "Pulsar.exe"

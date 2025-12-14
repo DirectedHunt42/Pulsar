@@ -8,6 +8,7 @@ from matplotlib.collections import LineCollection
 import pandas as pd
 import numpy as np
 import os
+import sys
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 import webbrowser
@@ -321,9 +322,17 @@ root.title(APP_NAME)
 root.configure(fg_color='#1a1a1a')
 apply_icon(root)
 
+# --- CORRECTED SHUTDOWN LOGIC ---
 def on_closing():
-    try: root.quit(); root.destroy()
-    except: pass
+    try:
+        plt.close('all') # Close matplotlib figures
+        root.quit()      # Stop mainloop
+        root.destroy()   # Destroy window
+    except:
+        pass
+    finally:
+        sys.exit(0)      # Force Process Termination
+
 root.protocol("WM_DELETE_WINDOW", on_closing)
 root.after(200, lambda: root.state('zoomed'))
 
